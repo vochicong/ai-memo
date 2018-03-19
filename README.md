@@ -1,3 +1,5 @@
+[![Azure Notebooks](https://notebooks.azure.com/launch.png)](https://notebooks.azure.com/vochicong/libraries/ai-math-memo)
+
 # 基本的な数式のメモ
 
 Machine Learning (AI) に関する基本的な数式のメモ。
