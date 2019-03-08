@@ -86,3 +86,45 @@ pd.DataFrame({'actual': y.flatten()[seq_len:],
               'predic': pred.flatten()}).head(
     samples_per_cycle * 2).plot()
 pred.shape, y.flatten()[seq_len:].shape
+
+
+# %% [markdown]
+# # ReNom
+# %%
+# from renom.utility.distributor import NdarrayDistributor, TimeSeriesDistributor
+# from renom.utility.trainer import Trainer
+import renom as rm
+rm.cuda.set_cuda_active(False)
+
+# TODO: ReNome 時系列データ generator を作成
+print(X.shape, y.shape)
+print_params()
+rgen = rm.utility.distributor.TimeSeriesDistributor(X, y)
+
+# rX = X.reshape([-1, 11])
+# ry = y[:rX.shape[0]]
+# print(rX.shape, ry.shape)
+# rgen = rm.utility.distributor.NdarrayDistributor(rX, ry)
+# len(rgen), X[0], y[0], rgen[0]
+
+# TODO: LSTMの input_size を正しく指定！
+lstm = rm.Lstm(lstm_n_units,
+               input_size=(seq_len, xdim,)
+               # input_size=(1, xdim,)
+               )
+# lstm.values()
+rmodel = rm.Sequential([
+    # rm.Dense(300), rm.Relu(),
+    lstm,
+    rm.Dense(ydim), rm.Sigmoid(),
+])
+rtrainer = rm.utility.trainer.Trainer(
+    rmodel, batch_size=batch_size, num_epoch=n_epochs,
+    loss_func=rm.mean_squared_error, optimizer=rm.Rmsprop())
+rtrainer.train(train_distributor=rgen)
+# %%
+# batch = rgen.batch(batch_size)
+# lst = list(batch)
+# print(len(lst[0][1]))
+# lst[0][1]
+# np.array(lst).shape
