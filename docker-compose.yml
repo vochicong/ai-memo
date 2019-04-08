@@ -1,0 +1,16 @@
+version: '2.3'
+services:
+  jupyter:
+    image: ${DOCKER_IMAGE:-tensorflow/tensorflow:nightly-gpu-py3-jupyter}
+    runtime: ${DOCKER_RUNTIME:-nvidia}
+    volumes:
+      - .:/mywork
+    ports:
+      - ${JUPYTER_PORT:-8888}:8888
+    command:
+      - sh
+      - -c
+      - |
+        ln -s /mywork ./
+        # Jupyter URI: http://0.0.0.0:8888/?token=joker
+        jupyter notebook --ip 0.0.0.0 --allow-root --no-browser --NotebookApp.token="joker"
