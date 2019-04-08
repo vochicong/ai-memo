@@ -8,14 +8,14 @@
 # ### gym や TF Agentsなどのインストール
 
 # %%
-!apt - get install - qq xvfb python - opengl
+!apt-get install -qq xvfb python-opengl
 !pip install 'gym==0.10.11'
 !pip install imageio
 !pip install PILLOW
 !pip install pyglet
 !pip install pyvirtualdisplay
-!pip install tf - agents - nightly
-!pip install tf - nightly
+!pip install tf-agents-nightly
+!pip install tf-nightly
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
