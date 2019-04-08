@@ -12,5 +12,9 @@ services:
       - -c
       - |
         ln -s /mywork ./
+        pip install --upgrade jupyter_http_over_ws>=0.0.1a3
+        jupyter serverextension enable --py jupyter_http_over_ws
         # Jupyter URI: http://0.0.0.0:8888/?token=joker
-        jupyter notebook --ip 0.0.0.0 --allow-root --no-browser --NotebookApp.token="joker"
+        jupyter notebook --ip 0.0.0.0 --allow-root --no-browser --NotebookApp.token="joker" \
+                --NotebookApp.allow_origin='https://colab.research.google.com' \
+                --NotebookApp.port_retries=0
