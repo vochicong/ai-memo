@@ -15,6 +15,9 @@
 
 # %%
 from __future__ import absolute_import, division, print_function
+from tf_agents.drivers import dynamic_episode_driver
+from tf_agents.metrics import tf_metrics
+from tf_agents.policies import random_tf_policy
 # !which python
 # !sudo apt install -y cuda-cublas-10-0  cuda-cusolver-10-0 cuda-cudart-10-0 cuda-cusparse-10-0
 # !conda install -y -c anaconda cudatoolkit
@@ -48,7 +51,7 @@ class BlackJackEnv(py_environment.PyEnvironment):
             shape=(self.STATE_LEN,), dtype=np.int32, minimum=0,
             name='observation'
         )
-        self._reset()
+        self.__reset()
         return
 
     def _state(self):
@@ -63,9 +66,13 @@ class BlackJackEnv(py_environment.PyEnvironment):
     def observation_spec(self):
         return self._observation_spec
 
-    def _reset(self):
+    def __reset(self):
         self._player_cards = [self._new_card(), self._new_card()]
         self._dealer_cards = [self._new_card()]
+        self._episode_ended = False
+
+    def _reset(self):
+        self.__reset()
         return time_step.restart(self._state())
 
     def _new_card(self):
@@ -81,11 +88,22 @@ class BlackJackEnv(py_environment.PyEnvironment):
     def _player_score(self):
         return np.sum(self._player_cards)
 
+    def _terminate(self, reward):
+        print("Player: {} -> {}. Dealer: {} -> {}. Reward: {}.".format(
+            self._player_cards, np.sum(self._player_cards),
+            self._dealer_cards, np.sum(self._dealer_cards),
+            reward))
+        self._episode_ended = True
+        return time_step.termination(self._state(), reward)
+
     def _step(self, action):
+        if self._episode_ended:
+            self.reset()
+
         if action == self.ACT_HIT:
             self._player_cards.append(self._new_card())
             if self._player_score() > self.LIMIT_SCORE:  # the player goes bust
-                return time_step.termination(self._state(), -1)
+                return self._terminate(-1)
 
             return time_step.transition(self._state(), reward=0, discount=1)
 
@@ -98,7 +116,7 @@ class BlackJackEnv(py_environment.PyEnvironment):
             reward = 0
         else:
             reward = -1
-        return time_step.termination(self._state(), reward)
+        return self._terminate(reward)
 
 
 def print_spec(env):
@@ -114,6 +132,8 @@ def print_spec(env):
 # プレイヤーがカードを最大 `n_max_cards` 枚引く。
 # 平均的に見たら負けています。
 # %%
+
+
 def play_blackjack(env, n_max_cards=1):
     ts = env.reset()
     gain = ts.reward
@@ -132,15 +152,50 @@ def play_blackjack(env, n_max_cards=1):
     return cards, gain
 
 
-utils.validate_py_environment(BlackJackEnv())
+# utils.validate_py_environment(BlackJackEnv())
 
 env = tf_py_environment.TFPyEnvironment(BlackJackEnv())
 gains = []
-for _ in range(1000):
+num_eval_episodes = 5  # @param
+for _ in range(num_eval_episodes):
     _, gain = play_blackjack(env, 2)
     gains.append(gain)
-np.mean(gains)
+mean_score1 = np.mean(gains)
+mean_score1
 # %%
-# help(time_step.TimeStep)
-# int(False)
-np.random.randint(3)
+
+
+num_eval_episodes = 2  # @param
+
+
+def evaluate_policy(
+        policy,
+        observers,
+        eval_env=tf_py_environment.TFPyEnvironment(BlackJackEnv()),
+        num_episodes=num_eval_episodes):
+    driver = dynamic_episode_driver.DynamicEpisodeDriver(
+        eval_env, policy, observers, num_episodes)
+    final_step, policy_state = driver.run(num_episodes=num_episodes)
+    print('Final step', final_step)
+    return driver, final_step, policy_state
+
+
+env = tf_py_environment.TFPyEnvironment(BlackJackEnv())
+rand_policy = random_tf_policy.RandomTFPolicy(
+    action_spec=env.action_spec(),
+    time_step_spec=env.time_step_spec(),)
+replay_buffer = []
+avg_return = tf_metrics.AverageReturnMetric()
+n_episodes = tf_metrics.NumberOfEpisodes()
+n_steps = tf_metrics.EnvironmentSteps()
+observers = [replay_buffer.append, avg_return, n_episodes, n_steps]
+driver, final_step, policy_state = evaluate_policy(rand_policy, observers)
+print('Number of Steps: ', n_steps.result().numpy())
+print('Number of Episodes: ', n_episodes.result().numpy())
+print('Average Return: ', avg_return.result().numpy())
+
+# %%
+final_step, policy_state = driver.run(final_step, policy_state, num_episodes=1)
+print('Number of Steps: ', n_steps.result().numpy())
+print('Number of Episodes: ', n_episodes.result().numpy())
+print('Average Return: ', avg_return.result().numpy())
