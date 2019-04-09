@@ -1,5 +1,17 @@
 # %% [markdown]
-# # TF Agents の環境
+# # TF Agent で Blackjack 遊ぶ
+#
+# ブラックジャックを参考に、次のような
+# ルールとする。
+#
+# - カードの値は、 1〜11の間にランダムに決まる（エース考慮などはしない）
+# - 最初にカードをプレイヤーに2枚、ディーラーに1枚
+# - プレイヤーが何枚でもカードを引ける(hit)が、合計が21超えたら即負け。ゲーム終了
+# - プレイヤーがカードを引くのを止めたら(stick)、ディーラーがカードを引く番になる
+# - ディーラーは、カードの合計が17に達するまでカードを強制的に引く
+# - ディーラーのカードの合計が21超えたら、プレイヤーの勝ち。ゲーム終了
+# - ディーラーとプレイヤーとでカードの合計を比較して、高いほうが勝ち。ゲーム終了
+
 
 # %%
 from __future__ import absolute_import, division, print_function
@@ -21,22 +33,29 @@ tf.compat.v1.enable_v2_behavior()
 
 
 class BlackJackEnv(py_environment.PyEnvironment):
-    ACT_GET_CARD = 0
-    ACT_END_GAME = 1
-    LIMIT_STATE = 21
+    # Simplified Blackjack
+    ACT_HIT = 0
+    ACT_STICK = 1
+    LIMIT_SCORE = 21
+    STATE_LEN = 3
 
     def __init__(self):
         self._action_spec = array_spec.BoundedArraySpec(
-            shape=(), dtype=np.int32, minimum=0, maximum=1,
-            name='action'
+            shape=(), dtype=np.int32, name='action',
+            minimum=self.ACT_HIT, maximum=self.ACT_STICK,
         )
         self._observation_spec = array_spec.BoundedArraySpec(
-            shape=(1,), dtype=np.int32, minimum=0,
+            shape=(self.STATE_LEN,), dtype=np.int32, minimum=0,
             name='observation'
         )
-        self._state = 0
-        self._episode_ended = False
+        self._reset()
         return
+
+    def _state(self):
+        # Full state includes 1st card of the dealer and all cards of player,
+        # but this return only the last STATE_LEN cards.
+        state = [self._dealer_cards[0]] + self._player_cards
+        return np.array(state[-self.STATE_LEN:], dtype=np.int32)
 
     def action_spec(self):
         return self._action_spec
@@ -45,35 +64,41 @@ class BlackJackEnv(py_environment.PyEnvironment):
         return self._observation_spec
 
     def _reset(self):
-        self._state = 0
-        self._episode_ended = False
-        return time_step.restart(np.array([self._state], dtype=np.int32))
+        self._player_cards = [self._new_card(), self._new_card()]
+        self._dealer_cards = [self._new_card()]
+        return time_step.restart(self._state())
+
+    def _new_card(self):
+        # Simplified Blackjack rule
+        new_card = np.random.randint(1, 11+1)
+        return new_card
+
+    def _dealer_hit(self):
+        while np.sum(self._dealer_cards) < 17:
+            self._dealer_cards.append(self._new_card())
+        return np.sum(self._dealer_cards)
+
+    def _player_score(self):
+        return np.sum(self._player_cards)
 
     def _step(self, action):
-        if self._episode_ended:
-            return self.reset()
+        if action == self.ACT_HIT:
+            self._player_cards.append(self._new_card())
+            if self._player_score() > self.LIMIT_SCORE:  # the player goes bust
+                return time_step.termination(self._state(), -1)
 
-        if action == self.ACT_END_GAME:
-            self._episode_ended = True
-        elif action == self.ACT_GET_CARD:
-            new_card = np.random.randint(1, 11)
-            self._state += new_card
-        #   print("New card: {}, Sum: {}".format(new_card, self._state))
+            return time_step.transition(self._state(), reward=0, discount=1)
+
+        # Afteward action == self.ACT_STICK
+        dealer_score = self._dealer_hit()
+        player_score = self._player_score()
+        if dealer_score > self.LIMIT_SCORE or dealer_score < player_score:
+            reward = 1
+        elif dealer_score == player_score:
+            reward = 0
         else:
-            raise ValueError("`action` should be {} or {}".format(
-                self.ACT_GET_CARD, self.ACT_END_GAME
-            ))
-
-        if self._episode_ended or self._state >= self.LIMIT_STATE:
-            reward = self._state if self._state <= self.LIMIT_STATE else 0
-            # print("End of Game. Rewarded", reward)
-            return time_step.termination(
-                np.array([self._state], dtype=np.int32), reward)
-
-        return time_step.transition(
-            np.array([self._state], dtype=np.int32),
-            reward=0.0,
-            discount=1.0)
+            reward = -1
+        return time_step.termination(self._state(), reward)
 
 
 def print_spec(env):
@@ -83,46 +108,39 @@ def print_spec(env):
         print(x)
     return
 
-
-def play_blackjack(
-    env, n_cards=3,
-    act_get_card=lambda: tf.constant([BlackJackEnv.ACT_GET_CARD]),
-    act_end_game=lambda: tf.constant([BlackJackEnv.ACT_END_GAME]),
-):
+# %% [markdown]
+# ## ランダムに遊ぶ場合
+#
+# プレイヤーがカードを最大 `n_max_cards` 枚引く。
+# 平均的に見たら負けています。
+# %%
+def play_blackjack(env, n_max_cards=1):
     ts = env.reset()
     gain = ts.reward
     cards = []
-    for _ in range(n_cards):
+    for _ in range(np.random.randint(n_max_cards+1)):
         if ts.is_last():
             break
-        ts = env.step(act_get_card())
-        # print(ts)
+        ts = env.step(tf.constant([BlackJackEnv.ACT_HIT]))
         cards += [ts.observation[0][0].numpy()]
         gain += ts.reward
 
     if not ts.is_last():
-        ts = env.step(act_end_game())
-        # print(ts)
+        ts = env.step(tf.constant([BlackJackEnv.ACT_STICK]))
         gain += ts.reward
     gain = gain.numpy()[0]
-    # print("Cards: {}. Reward: {}.".format(cards, gain))
     return cards, gain
 
 
-env = BlackJackEnv()
-# utils.validate_py_environment(env)
-# print_spec(env)
-# play_blackjack(
-#     env,
-#     act_get_card=lambda: BlackJackEnv.ACT_GET_CARD,
-#     act_end_game=lambda: BlackJackEnv.ACT_END_GAME,
-# )
+utils.validate_py_environment(BlackJackEnv())
 
-env = tf_py_environment.TFPyEnvironment(env)
+env = tf_py_environment.TFPyEnvironment(BlackJackEnv())
 gains = []
-for _ in range(100):
-    _, gain = play_blackjack(env)
-    gains += [gain]
-np.mean(gains)  # about 12
+for _ in range(1000):
+    _, gain = play_blackjack(env, 2)
+    gains.append(gain)
+np.mean(gains)
 # %%
-help(time_step.TimeStep)
+# help(time_step.TimeStep)
+# int(False)
+np.random.randint(3)
