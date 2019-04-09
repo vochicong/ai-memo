@@ -98,7 +98,7 @@ class BlackJackEnv(py_environment.PyEnvironment):
 
     def _step(self, action):
         if self._episode_ended:
-            self.reset()
+            return self.reset() # don't forget to `return`
 
         if action == self.ACT_HIT:
             self._player_cards.append(self._new_card())
@@ -152,6 +152,7 @@ def play_blackjack(env, n_max_cards=1):
     return cards, gain
 
 
+# TODO: validate_py_environment should check for a reset()
 # utils.validate_py_environment(BlackJackEnv())
 
 env = tf_py_environment.TFPyEnvironment(BlackJackEnv())
@@ -165,7 +166,7 @@ mean_score1
 # %%
 
 
-num_eval_episodes = 2  # @param
+num_eval_episodes = 5  # @param
 
 
 def evaluate_policy(
